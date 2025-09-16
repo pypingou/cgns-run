@@ -327,16 +327,20 @@ int join_cgroups_from_info(process_info_t *info) {
             snprintf(cgroup_path, sizeof(cgroup_path), "/sys/fs/cgroup/%s%s/cgroup.procs", subsystems, cgroup_name);
         }
 
+        printf("Attempting to join cgroup: %s\n", cgroup_path);
         fd = open(cgroup_path, O_WRONLY);
         if (fd == -1) {
+            printf("Failed to open cgroup file %s: %s\n", cgroup_path, strerror(errno));
             continue;
         }
 
         if (write(fd, my_pid_str, strlen(my_pid_str)) == -1) {
+            printf("Failed to write to cgroup file %s: %s\n", cgroup_path, strerror(errno));
             close(fd);
             continue;
         }
 
+        printf("Successfully joined cgroup: %s\n", cgroup_path);
         close(fd);
     }
 
