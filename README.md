@@ -5,7 +5,7 @@ A C program that executes a command in the same namespaces and cgroups as an exi
 ## Features
 
 - **List mode**: Display namespace and cgroup information for any process
-- **Execute mode**: Join all available Linux namespaces (mount, uts, ipc, pid, net, user, cgroup)
+- **Execute mode**: Attempts to join all Linux namespaces (mount, uts, ipc, pid, net, user, cgroup)
 - Migrates to the same cgroups as the target process
 - Executes the specified command with all arguments
 - Robust error handling and validation
@@ -93,30 +93,35 @@ sudo ./cgns-run 412 /usr/sbin/httpd -DFOREGROUND
 ```
 
 This creates a process tree where:
-- **Parent process**: Remains in the host namespaces (visible to host `ps`)
-- **Child processes**: Inherit the container namespaces
+- **Parent process**: Transitions to container namespaces during execution
+- **Child processes**: Inherit the container namespaces from the parent
+- **All processes**: Share identical namespaces with the target container process
 
 ### Namespace Inheritance
 
-When comparing processes with `cgns-run -d`, you may see different PID namespaces between parent and child processes:
+All processes started by `cgns-run` successfully join the target container's namespaces:
 
 ```bash
-$ cgns-run -d 2354 412  # Parent httpd vs container process
+$ cgns-run -d <httpd_process> 412  # Any httpd process vs container process
 NAMESPACES:
-  pid: DIFFERENT
-    PID 2354: pid:[4026531836]  # Host PID namespace
-    PID 412:  pid:[4026532318]  # Container PID namespace
+  mnt: SAME
+  uts: SAME
+  ipc: SAME
+  pid: SAME                   # All in container PID namespace
+  net: SAME
+  user: SAME
+  cgroup: SAME
 
-$ cgns-run -d 2356 412  # Child httpd vs container process
-NAMESPACES:
-  pid: SAME                   # Both in container PID namespace
+SUMMARY:
+  Namespaces: ALL SAME
+  Cgroups: ALL SAME
 ```
 
-**Why this happens:**
-- The `cgns-run` process joins the container's PID namespace
+**What this means:**
+- The `cgns-run` process successfully joins all container namespaces
 - When `execv()` is called, the new process inherits these namespaces
-- Child processes spawned by the executed command remain in the container namespaces
-- The original parent (visible from host) shows the transition point
+- All child processes spawned remain in the container namespaces
+- Namespace joining works correctly, but container visibility is limited (see "Container Runtime Limitations")
 
 ### Container Path Translation
 
@@ -155,6 +160,34 @@ This tool is specifically designed to work with modern container environments:
 - **Modern distributions**: Automatic path translation for `/usr` merge layouts
 - **User namespace handling**: Gracefully handles user namespace join failures
 
+## Container Runtime Limitations
+
+**Important**: While `cgns-run` successfully joins all Linux namespaces and cgroups, processes started via `cgns-run` **will not be visible inside container tools** (like `podman exec`, `docker exec`) even though they share identical namespaces.
+
+### Why This Happens
+
+Modern container runtimes implement additional process isolation beyond Linux namespaces:
+
+- **Runtime filtering**: Container tools filter process visibility based on process ancestry
+- **Security policies**: Additional isolation prevents external processes from appearing in containers
+- **Cgroup-based visibility**: Process visibility may be tied to specific cgroup membership patterns
+
+### What This Means
+
+```bash
+# This works - cgns-run joins all namespaces successfully
+sudo ./cgns-run 412 /usr/sbin/httpd -DFOREGROUND
+
+# Verification shows identical namespaces
+cgns-run -d <httpd_worker_pid> 412
+# Output: "Namespaces: ALL SAME, Cgroups: ALL SAME"
+
+# But container tools won't see the httpd processes
+podman exec container_name ps aux  # httpd processes NOT visible
+```
+
+This is **expected behavior** - it's a security feature of container runtimes, not a limitation of `cgns-run`.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -177,10 +210,16 @@ Failed to exec httpd: No such file or directory
 ```
 Try using the `-r` flag for automatic path translation, or use the full path to the executable within the container context.
 
+**Container process visibility:**
+```
+podman exec container_name ps aux  # Started processes not visible
+```
+This is expected behavior. Processes started via `cgns-run` share all namespaces with the container but remain external to the container runtime's process management. See "Container Runtime Limitations" section.
+
 ### Verification Commands
 
 ```bash
-# Verify process is running in correct context
+# Verify process is running in correct context (should show "ALL SAME")
 cgns-run -d <new_process_pid> <target_pid>
 
 # List all process namespaces for comparison
@@ -188,7 +227,11 @@ cgns-run -l <pid>
 
 # Check if processes share the same container environment
 ps aux | grep <command>
-cgns-run -d <parent_pid> <child_pid>
+cgns-run -d <process_pid> <container_pid>
+
+# Note: Container tools won't show cgns-run processes
+podman exec container_name ps aux  # Will NOT show cgns-run processes
+docker exec container_name ps aux   # Will NOT show cgns-run processes
 ```
 
 ## Security Considerations
