@@ -283,6 +283,52 @@ int join_cgroups(pid_t target_pid) {
     return 0;
 }
 
+int join_cgroups_from_info(process_info_t *info) {
+    char cgroup_path[512];
+    char my_pid_str[32];
+    char *colon1, *colon2;
+    int fd;
+
+    snprintf(my_pid_str, sizeof(my_pid_str), "%d\n", getpid());
+
+    for (int i = 0; i < info->num_cgroups; i++) {
+        char line[512];
+        strcpy(line, info->cgroups[i]);
+
+        colon1 = strchr(line, ':');
+        if (!colon1) continue;
+
+        colon2 = strchr(colon1 + 1, ':');
+        if (!colon2) continue;
+
+        *colon1 = '\0';
+        *colon2 = '\0';
+
+        char *subsystems = colon1 + 1;
+        char *cgroup_name = colon2 + 1;
+
+        if (strlen(subsystems) == 0) {
+            snprintf(cgroup_path, sizeof(cgroup_path), "/sys/fs/cgroup%s/cgroup.procs", cgroup_name);
+        } else {
+            snprintf(cgroup_path, sizeof(cgroup_path), "/sys/fs/cgroup/%s%s/cgroup.procs", subsystems, cgroup_name);
+        }
+
+        fd = open(cgroup_path, O_WRONLY);
+        if (fd == -1) {
+            continue;
+        }
+
+        if (write(fd, my_pid_str, strlen(my_pid_str)) == -1) {
+            close(fd);
+            continue;
+        }
+
+        close(fd);
+    }
+
+    return 0;
+}
+
 void usage(const char *prog_name) {
     fprintf(stderr, "Usage: %s [OPTIONS] <target_pid> [command] [args...]\n", prog_name);
     fprintf(stderr, "       %s -d <pid1> <pid2>\n", prog_name);
@@ -416,12 +462,15 @@ int main(int argc, char *argv[]) {
         printf("Using translated command path: %s\n", exec_command);
     }
 
+    process_info_t cgroup_info;
+    get_cgroup_info(target_pid, &cgroup_info);
+
     if (join_namespaces(target_pid) == -1) {
         fprintf(stderr, "Failed to join namespaces\n");
         return 1;
     }
 
-    if (join_cgroups(target_pid) == -1) {
+    if (join_cgroups_from_info(&cgroup_info) == -1) {
         fprintf(stderr, "Warning: Failed to join some cgroups\n");
     }
 
