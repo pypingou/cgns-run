@@ -398,13 +398,13 @@ int main(int argc, char *argv[]) {
     }
 
     char *exec_command = argv[optind + 1];
-    char full_command_path[1024];
+    char full_command_path[2048];
 
     if (auto_rootfs) {
         process_info_t info;
         if (get_rootfs_info(target_pid, &info) == 0 && strlen(info.rootfs) > 0) {
             if (exec_command[0] == '/') {
-                char translated_path[1024];
+                char translated_path[2048];
                 strcpy(translated_path, exec_command);
 
                 if (strncmp(exec_command, "/bin/", 5) == 0) {
@@ -413,7 +413,11 @@ int main(int argc, char *argv[]) {
                     snprintf(translated_path, sizeof(translated_path), "/usr%s", exec_command);
                 }
 
-                snprintf(full_command_path, sizeof(full_command_path), "%s%s", info.rootfs, translated_path);
+                int ret = snprintf(full_command_path, sizeof(full_command_path), "%s%s", info.rootfs, translated_path);
+                if (ret >= (int)sizeof(full_command_path)) {
+                    fprintf(stderr, "Error: Command path too long\n");
+                    return 1;
+                }
             } else {
                 snprintf(full_command_path, sizeof(full_command_path), "%s/usr/bin/%s", info.rootfs, exec_command);
             }
