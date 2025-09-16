@@ -398,34 +398,22 @@ int main(int argc, char *argv[]) {
     }
 
     char *exec_command = argv[optind + 1];
-    char full_command_path[2048];
+    char translated_command[2048];
 
     if (auto_rootfs) {
-        process_info_t info;
-        if (get_rootfs_info(target_pid, &info) == 0 && strlen(info.rootfs) > 0) {
-            if (exec_command[0] == '/') {
-                char translated_path[2048];
-                strcpy(translated_path, exec_command);
+        if (exec_command[0] == '/') {
+            strcpy(translated_command, exec_command);
 
-                if (strncmp(exec_command, "/bin/", 5) == 0) {
-                    snprintf(translated_path, sizeof(translated_path), "/usr%s", exec_command);
-                } else if (strncmp(exec_command, "/sbin/", 6) == 0) {
-                    snprintf(translated_path, sizeof(translated_path), "/usr%s", exec_command);
-                }
-
-                int ret = snprintf(full_command_path, sizeof(full_command_path), "%s%s", info.rootfs, translated_path);
-                if (ret >= (int)sizeof(full_command_path)) {
-                    fprintf(stderr, "Error: Command path too long\n");
-                    return 1;
-                }
-            } else {
-                snprintf(full_command_path, sizeof(full_command_path), "%s/usr/bin/%s", info.rootfs, exec_command);
+            if (strncmp(exec_command, "/bin/", 5) == 0) {
+                snprintf(translated_command, sizeof(translated_command), "/usr%s", exec_command);
+            } else if (strncmp(exec_command, "/sbin/", 6) == 0) {
+                snprintf(translated_command, sizeof(translated_command), "/usr%s", exec_command);
             }
-            exec_command = full_command_path;
-            printf("Using rootfs-prefixed command: %s\n", exec_command);
         } else {
-            fprintf(stderr, "Warning: Could not detect rootfs, using original command\n");
+            snprintf(translated_command, sizeof(translated_command), "/usr/bin/%s", exec_command);
         }
+        exec_command = translated_command;
+        printf("Using translated command path: %s\n", exec_command);
     }
 
     if (join_namespaces(target_pid) == -1) {
@@ -438,7 +426,11 @@ int main(int argc, char *argv[]) {
     }
 
     argv[optind + 1] = exec_command;
-    execvp(exec_command, &argv[optind + 1]);
+    if (exec_command[0] == '/') {
+        execv(exec_command, &argv[optind + 1]);
+    } else {
+        execvp(exec_command, &argv[optind + 1]);
+    }
     fprintf(stderr, "Failed to exec %s: %s\n", exec_command, strerror(errno));
     return 1;
 }
