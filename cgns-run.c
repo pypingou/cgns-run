@@ -10,7 +10,7 @@
 #include <getopt.h>
 
 static const char *namespaces[] = {
-    "uts", "ipc", "pid", "net", "user", "cgroup", NULL
+    "mnt", "uts", "ipc", "pid", "net", "user", "cgroup", NULL
 };
 
 typedef struct {
@@ -219,6 +219,8 @@ int join_namespaces(pid_t target_pid) {
             fprintf(stderr, "Failed to join namespace %s: %s\n", namespaces[i], strerror(errno));
             close(fd);
             return -1;
+        } else {
+            printf("Successfully joined %s namespace\n", namespaces[i]);
         }
 
         close(fd);
