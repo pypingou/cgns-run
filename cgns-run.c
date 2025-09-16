@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -211,7 +210,6 @@ int join_cgroups(pid_t target_pid) {
         *colon1 = '\0';
         *colon2 = '\0';
 
-        char *hierarchy_id = line;
         char *subsystems = colon1 + 1;
         char *cgroup_name = colon2 + 1;
 
