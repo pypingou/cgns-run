@@ -14,3 +14,6 @@ cgns-run
 # OS files
 .DS_Store
 Thumbs.db
+
+# AI agent
+.claude/
