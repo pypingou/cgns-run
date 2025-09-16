@@ -499,13 +499,14 @@ int main(int argc, char *argv[]) {
     process_info_t cgroup_info;
     get_cgroup_info(target_pid, &cgroup_info);
 
+    // Join cgroups BEFORE joining mount namespace to ensure /sys/fs/cgroup access
+    if (join_cgroups_from_info(&cgroup_info) == -1) {
+        fprintf(stderr, "Warning: Failed to join some cgroups\n");
+    }
+
     if (join_namespaces(target_pid) == -1) {
         fprintf(stderr, "Failed to join namespaces\n");
         return 1;
-    }
-
-    if (join_cgroups_from_info(&cgroup_info) == -1) {
-        fprintf(stderr, "Warning: Failed to join some cgroups\n");
     }
 
     argv[optind + 1] = exec_command;
