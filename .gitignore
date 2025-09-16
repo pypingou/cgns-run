@@ -1,0 +1,16 @@
+# Binary
+cgns-run
+
+# Object files
+*.o
+
+# Editor files
+*~
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
