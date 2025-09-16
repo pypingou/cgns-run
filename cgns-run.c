@@ -196,34 +196,46 @@ void diff_processes(pid_t pid1, pid_t pid2) {
 
 int join_namespaces(pid_t target_pid) {
     char ns_path[256];
-    int fd;
+    int ns_fds[10];
+    int fd_count = 0;
 
+    // First, open all namespace file descriptors before joining any
     for (int i = 0; namespaces[i]; i++) {
         snprintf(ns_path, sizeof(ns_path), "/proc/%d/ns/%s", target_pid, namespaces[i]);
 
-        fd = open(ns_path, O_RDONLY);
-        if (fd == -1) {
+        ns_fds[i] = open(ns_path, O_RDONLY);
+        if (ns_fds[i] == -1) {
             if (errno == ENOENT) {
                 continue;
             }
             fprintf(stderr, "Failed to open %s: %s\n", ns_path, strerror(errno));
+            // Close any already opened fds
+            for (int j = 0; j < i; j++) {
+                if (ns_fds[j] != -1) close(ns_fds[j]);
+            }
             return -1;
         }
+        fd_count++;
+    }
 
-        if (setns(fd, 0) == -1) {
+    // Now join all namespaces using the pre-opened file descriptors
+    for (int i = 0; namespaces[i]; i++) {
+        if (ns_fds[i] == -1) continue;
+
+        if (setns(ns_fds[i], 0) == -1) {
             if (strcmp(namespaces[i], "user") == 0) {
                 fprintf(stderr, "Warning: Failed to join user namespace: %s\n", strerror(errno));
-                close(fd);
+                close(ns_fds[i]);
                 continue;
             }
             fprintf(stderr, "Failed to join namespace %s: %s\n", namespaces[i], strerror(errno));
-            close(fd);
+            close(ns_fds[i]);
             return -1;
         } else {
             printf("Successfully joined %s namespace\n", namespaces[i]);
         }
 
-        close(fd);
+        close(ns_fds[i]);
     }
 
     return 0;
