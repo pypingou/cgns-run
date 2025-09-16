@@ -13,6 +13,8 @@ static const char *namespaces[] = {
     "mnt", "uts", "ipc", "pid", "net", "user", "cgroup", NULL
 };
 
+int debug_mode = 0;
+
 typedef struct {
     char namespaces[7][256];
     char cgroups[64][512];
@@ -232,7 +234,9 @@ int join_namespaces(pid_t target_pid) {
             close(ns_fds[i]);
             return -1;
         } else {
-            printf("Successfully joined %s namespace\n", namespaces[i]);
+            if (debug_mode) {
+                printf("Successfully joined %s namespace\n", namespaces[i]);
+            }
         }
 
         close(ns_fds[i]);
@@ -327,36 +331,44 @@ int join_cgroups_from_info(process_info_t *info) {
             snprintf(cgroup_path, sizeof(cgroup_path), "/sys/fs/cgroup/%s%s/cgroup.procs", subsystems, cgroup_name);
         }
 
-        printf("Attempting to join cgroup: %s\n", cgroup_path);
+        if (debug_mode) {
+            printf("Attempting to join cgroup: %s\n", cgroup_path);
 
-        // Check if the directory exists first
-        char dir_path[512];
-        strcpy(dir_path, cgroup_path);
-        char *last_slash = strrchr(dir_path, '/');
-        if (last_slash) {
-            *last_slash = '\0';
-            struct stat dir_stat;
-            if (stat(dir_path, &dir_stat) == -1) {
-                printf("Cgroup directory %s does not exist: %s\n", dir_path, strerror(errno));
-                continue;
-            } else {
-                printf("Cgroup directory %s exists\n", dir_path);
+            // Check if the directory exists first
+            char dir_path[512];
+            strcpy(dir_path, cgroup_path);
+            char *last_slash = strrchr(dir_path, '/');
+            if (last_slash) {
+                *last_slash = '\0';
+                struct stat dir_stat;
+                if (stat(dir_path, &dir_stat) == -1) {
+                    printf("Cgroup directory %s does not exist: %s\n", dir_path, strerror(errno));
+                    continue;
+                } else {
+                    printf("Cgroup directory %s exists\n", dir_path);
+                }
             }
         }
 
         fd = open(cgroup_path, O_WRONLY);
         if (fd == -1) {
-            printf("Failed to open cgroup file %s: %s\n", cgroup_path, strerror(errno));
+            if (debug_mode) {
+                printf("Failed to open cgroup file %s: %s\n", cgroup_path, strerror(errno));
+            }
             continue;
         }
 
         if (write(fd, my_pid_str, strlen(my_pid_str)) == -1) {
-            printf("Failed to write to cgroup file %s: %s\n", cgroup_path, strerror(errno));
+            if (debug_mode) {
+                printf("Failed to write to cgroup file %s: %s\n", cgroup_path, strerror(errno));
+            }
             close(fd);
             continue;
         }
 
-        printf("Successfully joined cgroup: %s\n", cgroup_path);
+        if (debug_mode) {
+            printf("Successfully joined cgroup: %s\n", cgroup_path);
+        }
         close(fd);
     }
 
@@ -371,12 +383,14 @@ void usage(const char *prog_name) {
     fprintf(stderr, "  -l, --list    List namespaces and cgroups info for the target PID\n");
     fprintf(stderr, "  -d, --diff    Compare namespaces and cgroups between two PIDs\n");
     fprintf(stderr, "  -r, --rootfs  Automatically prefix command with detected rootfs path\n");
+    fprintf(stderr, "  -D, --debug   Enable verbose debug output\n");
     fprintf(stderr, "  -h, --help    Show this help message\n\n");
     fprintf(stderr, "Examples:\n");
     fprintf(stderr, "  %s -l 1234              # List info for process 1234\n", prog_name);
     fprintf(stderr, "  %s -d 1234 5678         # Compare processes 1234 and 5678\n", prog_name);
     fprintf(stderr, "  %s 1234 ps aux          # Run 'ps aux' in same context as 1234\n", prog_name);
     fprintf(stderr, "  %s -r 1234 httpd        # Run httpd with auto-detected rootfs prefix\n", prog_name);
+    fprintf(stderr, "  %s -D 1234 httpd        # Run with debug output enabled\n", prog_name);
 }
 
 int main(int argc, char *argv[]) {
@@ -389,11 +403,12 @@ int main(int argc, char *argv[]) {
         {"list", no_argument, 0, 'l'},
         {"diff", no_argument, 0, 'd'},
         {"rootfs", no_argument, 0, 'r'},
+        {"debug", no_argument, 0, 'D'},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
 
-    while ((opt = getopt_long(argc, argv, "ldrh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "ldrDh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'l':
                 list_only = 1;
@@ -403,6 +418,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'r':
                 auto_rootfs = 1;
+                break;
+            case 'D':
+                debug_mode = 1;
                 break;
             case 'h':
                 usage(argv[0]);
@@ -493,7 +511,9 @@ int main(int argc, char *argv[]) {
             snprintf(translated_command, sizeof(translated_command), "/usr/bin/%s", exec_command);
         }
         exec_command = translated_command;
-        printf("Using translated command path: %s\n", exec_command);
+        if (debug_mode) {
+            printf("Using translated command path: %s\n", exec_command);
+        }
     }
 
     process_info_t cgroup_info;
