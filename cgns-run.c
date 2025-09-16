@@ -169,6 +169,11 @@ int join_namespaces(pid_t target_pid) {
         }
 
         if (setns(fd, 0) == -1) {
+            if (strcmp(namespaces[i], "user") == 0) {
+                fprintf(stderr, "Warning: Failed to join user namespace: %s\n", strerror(errno));
+                close(fd);
+                continue;
+            }
             fprintf(stderr, "Failed to join namespace %s: %s\n", namespaces[i], strerror(errno));
             close(fd);
             return -1;
