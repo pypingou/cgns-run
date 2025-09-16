@@ -17,6 +17,7 @@ typedef struct {
     char namespaces[7][256];
     char cgroups[64][512];
     int num_cgroups;
+    char rootfs[512];
 } process_info_t;
 
 int get_namespace_info(pid_t pid, process_info_t *info) {
@@ -67,13 +68,54 @@ int get_cgroup_info(pid_t pid, process_info_t *info) {
     return 0;
 }
 
+int get_rootfs_info(pid_t pid, process_info_t *info) {
+    char mountinfo_path[256];
+    FILE *mountinfo_file;
+    char line[1024];
+
+    snprintf(mountinfo_path, sizeof(mountinfo_path), "/proc/%d/mountinfo", pid);
+    strcpy(info->rootfs, "");
+
+    mountinfo_file = fopen(mountinfo_path, "r");
+    if (!mountinfo_file) {
+        return -1;
+    }
+
+    while (fgets(line, sizeof(line), mountinfo_file)) {
+        char *fields[10];
+        char *token = strtok(line, " ");
+        int field_count = 0;
+
+        while (token && field_count < 10) {
+            fields[field_count++] = token;
+            token = strtok(NULL, " ");
+        }
+
+        if (field_count >= 5 && strcmp(fields[4], "/") == 0) {
+            char *root_field = fields[3];
+            if (strcmp(root_field, "/") != 0) {
+                snprintf(info->rootfs, sizeof(info->rootfs), "%s", root_field);
+            }
+            break;
+        }
+    }
+
+    fclose(mountinfo_file);
+    return 0;
+}
+
 void print_namespace_info(pid_t pid) {
     process_info_t info;
     get_namespace_info(pid, &info);
+    get_rootfs_info(pid, &info);
 
     printf("Process %d namespaces:\n", pid);
     for (int i = 0; namespaces[i]; i++) {
         printf("  %s: %s\n", namespaces[i], info.namespaces[i]);
+    }
+
+    if (strlen(info.rootfs) > 0) {
+        printf("  rootfs: %s\n", info.rootfs);
     }
 }
 
@@ -248,32 +290,39 @@ void usage(const char *prog_name) {
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  -l, --list    List namespaces and cgroups info for the target PID\n");
     fprintf(stderr, "  -d, --diff    Compare namespaces and cgroups between two PIDs\n");
+    fprintf(stderr, "  -r, --rootfs  Automatically prefix command with detected rootfs path\n");
     fprintf(stderr, "  -h, --help    Show this help message\n\n");
     fprintf(stderr, "Examples:\n");
     fprintf(stderr, "  %s -l 1234              # List info for process 1234\n", prog_name);
     fprintf(stderr, "  %s -d 1234 5678         # Compare processes 1234 and 5678\n", prog_name);
     fprintf(stderr, "  %s 1234 ps aux          # Run 'ps aux' in same context as 1234\n", prog_name);
+    fprintf(stderr, "  %s -r 1234 httpd        # Run httpd with auto-detected rootfs prefix\n", prog_name);
 }
 
 int main(int argc, char *argv[]) {
     int opt;
     int list_only = 0;
     int diff_mode = 0;
+    int auto_rootfs = 0;
 
     static struct option long_options[] = {
         {"list", no_argument, 0, 'l'},
         {"diff", no_argument, 0, 'd'},
+        {"rootfs", no_argument, 0, 'r'},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
 
-    while ((opt = getopt_long(argc, argv, "ldh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "ldrh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'l':
                 list_only = 1;
                 break;
             case 'd':
                 diff_mode = 1;
+                break;
+            case 'r':
+                auto_rootfs = 1;
                 break;
             case 'h':
                 usage(argv[0]);
@@ -357,7 +406,22 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Warning: Failed to join some cgroups\n");
     }
 
-    execvp(argv[optind + 1], &argv[optind + 1]);
-    fprintf(stderr, "Failed to exec %s: %s\n", argv[optind + 1], strerror(errno));
+    char *exec_command = argv[optind + 1];
+    char full_command_path[1024];
+
+    if (auto_rootfs) {
+        process_info_t info;
+        if (get_rootfs_info(target_pid, &info) == 0 && strlen(info.rootfs) > 0) {
+            snprintf(full_command_path, sizeof(full_command_path), "%s%s", info.rootfs, exec_command);
+            exec_command = full_command_path;
+            printf("Using rootfs-prefixed command: %s\n", exec_command);
+        } else {
+            fprintf(stderr, "Warning: Could not detect rootfs, using original command\n");
+        }
+    }
+
+    argv[optind + 1] = exec_command;
+    execvp(exec_command, &argv[optind + 1]);
+    fprintf(stderr, "Failed to exec %s: %s\n", exec_command, strerror(errno));
     return 1;
 }
