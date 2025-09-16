@@ -38,6 +38,7 @@ make
 - `-l, --list`: List namespaces and cgroups info for the target PID
 - `-d, --diff`: Compare namespaces and cgroups between two PIDs
 - `-r, --rootfs`: Automatically prefix command with detected rootfs path (for containers)
+- `-c, --conmon`: Fork and exit parent (conmon-like behavior for container integration)
 - `-D, --debug`: Enable verbose debug output
 - `-h, --help`: Show help message
 
@@ -63,6 +64,9 @@ sudo ./cgns-run 1234 ls -la /proc/self/ns/
 
 # Run httpd in a container with automatic path translation and debug output
 sudo ./cgns-run -D -r 412 /usr/sbin/httpd -DFOREGROUND
+
+# Run httpd with conmon-like behavior (no host parent process)
+sudo ./cgns-run -c -r 412 /usr/sbin/httpd -DFOREGROUND
 ```
 
 ## How it works
@@ -159,6 +163,7 @@ This tool is specifically designed to work with modern container environments:
 - **Systemd services**: Handles systemd cgroup hierarchies
 - **Modern distributions**: Automatic path translation for `/usr` merge layouts
 - **User namespace handling**: Gracefully handles user namespace join failures
+- **Conmon-like behavior**: Optional fork-and-exit mode for cleaner process integration
 
 ## Container Runtime Limitations
 
@@ -187,6 +192,39 @@ podman exec container_name ps aux  # httpd processes NOT visible
 ```
 
 This is **expected behavior** - it's a security feature of container runtimes, not a limitation of `cgns-run`.
+
+## Conmon Mode
+
+The `-c/--conmon` flag provides an alternative execution mode inspired by container runtime monitors:
+
+### How Conmon Mode Works
+
+```bash
+sudo ./cgns-run -c 412 /usr/sbin/httpd -DFOREGROUND
+```
+
+1. **Join all namespaces** (same as normal mode)
+2. **Fork a child process** in the container context
+3. **Parent exits immediately** (no lingering host process)
+4. **Child becomes session leader** (`setsid()`) and executes the command
+
+### Benefits of Conmon Mode
+
+- ✅ **No host parent process** - Parent exits cleanly after fork
+- ✅ **Session isolation** - Child process becomes independent session leader
+- ✅ **Process detachment** - Command runs detached from controlling terminal
+- ✅ **Clean process tree** - No cgns-run parent visible in process lists
+
+### Conmon Mode vs Normal Mode
+
+| Aspect | Normal Mode | Conmon Mode |
+|--------|-------------|-------------|
+| Host parent visible | Yes (`cgns-run` process remains) | No (parent exits immediately) |
+| TTY attachment | Attached to terminal | Detached (`?` TTY) |
+| Process status | `S+` (foreground) | `Ss` (session leader) |
+| Container visibility | Not visible in container tools | Still not visible (runtime limitation) |
+
+**Note**: Even with conmon mode, processes remain invisible to container tools due to container runtime security policies, but the approach provides cleaner process lifecycle management.
 
 ## Troubleshooting
 

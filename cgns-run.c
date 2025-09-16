@@ -383,6 +383,7 @@ void usage(const char *prog_name) {
     fprintf(stderr, "  -l, --list    List namespaces and cgroups info for the target PID\n");
     fprintf(stderr, "  -d, --diff    Compare namespaces and cgroups between two PIDs\n");
     fprintf(stderr, "  -r, --rootfs  Automatically prefix command with detected rootfs path\n");
+    fprintf(stderr, "  -c, --conmon  Fork and exit parent (conmon-like behavior for container integration)\n");
     fprintf(stderr, "  -D, --debug   Enable verbose debug output\n");
     fprintf(stderr, "  -h, --help    Show this help message\n\n");
     fprintf(stderr, "Examples:\n");
@@ -390,6 +391,7 @@ void usage(const char *prog_name) {
     fprintf(stderr, "  %s -d 1234 5678         # Compare processes 1234 and 5678\n", prog_name);
     fprintf(stderr, "  %s 1234 ps aux          # Run 'ps aux' in same context as 1234\n", prog_name);
     fprintf(stderr, "  %s -r 1234 httpd        # Run httpd with auto-detected rootfs prefix\n", prog_name);
+    fprintf(stderr, "  %s -c 1234 httpd        # Run httpd with conmon-like behavior\n", prog_name);
     fprintf(stderr, "  %s -D 1234 httpd        # Run with debug output enabled\n", prog_name);
 }
 
@@ -398,17 +400,19 @@ int main(int argc, char *argv[]) {
     int list_only = 0;
     int diff_mode = 0;
     int auto_rootfs = 0;
+    int conmon_mode = 0;
 
     static struct option long_options[] = {
         {"list", no_argument, 0, 'l'},
         {"diff", no_argument, 0, 'd'},
         {"rootfs", no_argument, 0, 'r'},
+        {"conmon", no_argument, 0, 'c'},
         {"debug", no_argument, 0, 'D'},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
 
-    while ((opt = getopt_long(argc, argv, "ldrDh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "ldrcDh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'l':
                 list_only = 1;
@@ -418,6 +422,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'r':
                 auto_rootfs = 1;
+                break;
+            case 'c':
+                conmon_mode = 1;
                 break;
             case 'D':
                 debug_mode = 1;
@@ -527,6 +534,36 @@ int main(int argc, char *argv[]) {
     if (join_namespaces(target_pid) == -1) {
         fprintf(stderr, "Failed to join namespaces\n");
         return 1;
+    }
+
+    if (conmon_mode) {
+        if (debug_mode) {
+            printf("Conmon mode: forking and exiting parent...\n");
+        }
+
+        pid_t child_pid = fork();
+        if (child_pid == -1) {
+            fprintf(stderr, "Failed to fork in conmon mode: %s\n", strerror(errno));
+            return 1;
+        }
+
+        if (child_pid > 0) {
+            // Parent process: exit immediately (like conmon)
+            if (debug_mode) {
+                printf("Parent exiting, child %d taking over...\n", child_pid);
+            }
+            exit(0);
+        }
+
+        // Child process: become session leader and continue
+        if (setsid() == -1) {
+            fprintf(stderr, "Failed to create new session: %s\n", strerror(errno));
+            return 1;
+        }
+
+        if (debug_mode) {
+            printf("Child process became session leader, executing command...\n");
+        }
     }
 
     argv[optind + 1] = exec_command;
