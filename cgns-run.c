@@ -404,7 +404,16 @@ int main(int argc, char *argv[]) {
         process_info_t info;
         if (get_rootfs_info(target_pid, &info) == 0 && strlen(info.rootfs) > 0) {
             if (exec_command[0] == '/') {
-                snprintf(full_command_path, sizeof(full_command_path), "%s%s", info.rootfs, exec_command);
+                char translated_path[1024];
+                strcpy(translated_path, exec_command);
+
+                if (strncmp(exec_command, "/bin/", 5) == 0) {
+                    snprintf(translated_path, sizeof(translated_path), "/usr%s", exec_command);
+                } else if (strncmp(exec_command, "/sbin/", 6) == 0) {
+                    snprintf(translated_path, sizeof(translated_path), "/usr%s", exec_command);
+                }
+
+                snprintf(full_command_path, sizeof(full_command_path), "%s%s", info.rootfs, translated_path);
             } else {
                 snprintf(full_command_path, sizeof(full_command_path), "%s/usr/bin/%s", info.rootfs, exec_command);
             }
