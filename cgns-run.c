@@ -10,7 +10,7 @@
 #include <getopt.h>
 
 static const char *namespaces[] = {
-    "mnt", "uts", "ipc", "pid", "net", "user", "cgroup", NULL
+    "uts", "ipc", "pid", "net", "user", "cgroup", NULL
 };
 
 typedef struct {
