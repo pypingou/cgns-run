@@ -403,7 +403,11 @@ int main(int argc, char *argv[]) {
     if (auto_rootfs) {
         process_info_t info;
         if (get_rootfs_info(target_pid, &info) == 0 && strlen(info.rootfs) > 0) {
-            snprintf(full_command_path, sizeof(full_command_path), "%s%s", info.rootfs, exec_command);
+            if (exec_command[0] == '/') {
+                snprintf(full_command_path, sizeof(full_command_path), "%s%s", info.rootfs, exec_command);
+            } else {
+                snprintf(full_command_path, sizeof(full_command_path), "%s/usr/bin/%s", info.rootfs, exec_command);
+            }
             exec_command = full_command_path;
             printf("Using rootfs-prefixed command: %s\n", exec_command);
         } else {
