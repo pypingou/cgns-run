@@ -397,15 +397,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (join_namespaces(target_pid) == -1) {
-        fprintf(stderr, "Failed to join namespaces\n");
-        return 1;
-    }
-
-    if (join_cgroups(target_pid) == -1) {
-        fprintf(stderr, "Warning: Failed to join some cgroups\n");
-    }
-
     char *exec_command = argv[optind + 1];
     char full_command_path[1024];
 
@@ -418,6 +409,15 @@ int main(int argc, char *argv[]) {
         } else {
             fprintf(stderr, "Warning: Could not detect rootfs, using original command\n");
         }
+    }
+
+    if (join_namespaces(target_pid) == -1) {
+        fprintf(stderr, "Failed to join namespaces\n");
+        return 1;
+    }
+
+    if (join_cgroups(target_pid) == -1) {
+        fprintf(stderr, "Warning: Failed to join some cgroups\n");
     }
 
     argv[optind + 1] = exec_command;
