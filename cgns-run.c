@@ -328,6 +328,22 @@ int join_cgroups_from_info(process_info_t *info) {
         }
 
         printf("Attempting to join cgroup: %s\n", cgroup_path);
+
+        // Check if the directory exists first
+        char dir_path[512];
+        strcpy(dir_path, cgroup_path);
+        char *last_slash = strrchr(dir_path, '/');
+        if (last_slash) {
+            *last_slash = '\0';
+            struct stat dir_stat;
+            if (stat(dir_path, &dir_stat) == -1) {
+                printf("Cgroup directory %s does not exist: %s\n", dir_path, strerror(errno));
+                continue;
+            } else {
+                printf("Cgroup directory %s exists\n", dir_path);
+            }
+        }
+
         fd = open(cgroup_path, O_WRONLY);
         if (fd == -1) {
             printf("Failed to open cgroup file %s: %s\n", cgroup_path, strerror(errno));
